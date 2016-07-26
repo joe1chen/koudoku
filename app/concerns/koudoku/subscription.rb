@@ -34,7 +34,12 @@ module Koudoku::Subscription
             prepare_for_upgrade if upgrading?
 
             # update the package level with stripe.
-            customer.update_subscription(:plan => self.plan.stripe_id, :prorate => Koudoku.prorate)
+            options = {
+              :plan => self.plan.stripe_id,
+              :prorate => Koudoku.prorate
+            }
+            options[:quantity] = self.quantity if self.quantity
+            customer.update_subscription(options)
 
             finalize_downgrade! if downgrading?
             finalize_upgrade! if upgrading?
@@ -86,7 +91,12 @@ module Koudoku::Subscription
               customer = Stripe::Customer.create(customer_attributes)
 
               finalize_new_customer!(customer.id, plan.price)
-              customer.update_subscription(:plan => self.plan.stripe_id, :prorate => Koudoku.prorate)
+              options = {
+                :plan => self.plan.stripe_id,
+                :prorate => Koudoku.prorate
+              }
+              options[:quantity] = self.quantity if self.quantity
+              customer.update_subscription(options)
 
             rescue Stripe::CardError => card_error
               errors[:base] << card_error.message
@@ -116,6 +126,21 @@ module Koudoku::Subscription
 
         finalize_plan_change!
 
+      # if they're changing their quantity
+      elsif quantity_changed?
+        if stripe_id.present? && plan.present?
+          prepare_for_quantity_change
+
+          customer = Stripe::Customer.retrieve(self.stripe_id)
+          options = {
+            :plan => self.plan.stripe_id,
+            :prorate => Koudoku.prorate
+          }
+          options[:quantity] = self.quantity if self.quantity
+          customer.update_subscription(options)
+
+          finalize_quantity_change!
+        end
       # if they're updating their credit card details.
       elsif self.credit_card_token.present?
 
@@ -214,6 +239,9 @@ module Koudoku::Subscription
   def prepare_for_card_update
   end
 
+  def prepare_for_quantity_change
+  end
+
   def finalize_plan_change!
   end
 
@@ -233,6 +261,9 @@ module Koudoku::Subscription
   end
 
   def finalize_card_update!
+  end
+
+  def finalize_quantity_change!
   end
 
   def card_was_declined
